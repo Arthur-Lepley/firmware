@@ -65,6 +65,8 @@
 #include "modules/GenericThreadModule.h"
 #endif
 
+#include "modules/LEO/LeoRouter.h"
+
 #ifdef ARCH_ESP32
 #if defined(USE_SX1280) && !MESHTASTIC_EXCLUDE_AUDIO
 #include "modules/esp32/AudioModule.h"
@@ -170,6 +172,7 @@ void setupModules()
 #endif
     // Example: Put your module here
     // new ReplyModule();
+    new LeoRouter();
 #if HAS_SCREEN && !MESHTASTIC_EXCLUDE_CANNEDMESSAGES
     if (config.display.displaymode != meshtastic_Config_DisplayConfig_DisplayMode_COLOR) {
         cannedMessageModule = new CannedMessageModule();
