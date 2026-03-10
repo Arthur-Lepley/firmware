@@ -10,6 +10,8 @@
 #include "meshtastic/localonly.pb.h"
 #include "meshtastic/mesh.pb.h"
 #include "meshtastic/telemetry.pb.h"
+#include "meshtastic/leo.pb.h"
+
 
 #if PB_PROTO_HEADER_VERSION != 40
 #error Regenerate this file with the current version of nanopb generator.
@@ -151,6 +153,15 @@ typedef struct _meshtastic_NodeDatabase {
     /* New lite version of NodeDB to decrease memory footprint */
     std::vector<meshtastic_NodeInfoLite> nodes;
 } meshtastic_NodeDatabase;
+
+typedef struct _meshtastic_TLEDatabase {
+    /* A version integer used to invalidate old save files when we make
+ incompatible changes This integer is set at build time and is private to
+ NodeDB.cpp in the device code. */
+    uint32_t version;
+    /* New lite version of NodeDB to decrease memory footprint */
+    std::vector<meshtastic_TLE> TLEs;
+} meshtastic_TLEDatabase;
 
 /* The on-disk saved channels */
 typedef struct _meshtastic_ChannelFile {
@@ -346,6 +357,7 @@ extern const pb_msgdesc_t meshtastic_UserLite_msg;
 extern const pb_msgdesc_t meshtastic_NodeInfoLite_msg;
 extern const pb_msgdesc_t meshtastic_DeviceState_msg;
 extern const pb_msgdesc_t meshtastic_NodeDatabase_msg;
+extern const pb_msgdesc_t meshtastic_TLEDatabase_msg;
 extern const pb_msgdesc_t meshtastic_ChannelFile_msg;
 extern const pb_msgdesc_t meshtastic_BackupPreferences_msg;
 
@@ -355,6 +367,7 @@ extern const pb_msgdesc_t meshtastic_BackupPreferences_msg;
 #define meshtastic_NodeInfoLite_fields &meshtastic_NodeInfoLite_msg
 #define meshtastic_DeviceState_fields &meshtastic_DeviceState_msg
 #define meshtastic_NodeDatabase_fields &meshtastic_NodeDatabase_msg
+#define meshtastic_TLEDatabase_fields &meshtastic_TLEDatabase_msg
 #define meshtastic_ChannelFile_fields &meshtastic_ChannelFile_msg
 #define meshtastic_BackupPreferences_fields &meshtastic_BackupPreferences_msg
 

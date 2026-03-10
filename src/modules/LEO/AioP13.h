@@ -175,7 +175,8 @@ public:
     ~P13Satellite();
     
     void   tle(const char *p_ccSatName, const char *p_ccl1, const char *p_ccl2);
-    void   predict(const P13DateTime &p_dt);
+    //void tle(long N, long YE, double TE, double IN, double RA, double EC, double WP, double MA, double MM, double M2);
+    void predict(const P13DateTime &p_dt);
     void   latlon(double &p_dlat, double &p_dlon);
     void   elaz(const P13Observer &p_obs, double &p_del, double &p_daz);
     void   footprint(int p_aipoints[][2], int p_inumberofpoints, const int p_ciMapMaxX, const int p_ciMapMaxY, double &p_dsatlat, double &p_dsatlon);

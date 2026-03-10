@@ -38,6 +38,12 @@ typedef struct _meshtastic_TLE {
  @brief Unix-epoch time of the last update of the TLE (for the TLE DB) */
     bool has_last_update_time;
     uint32_t last_update_time;
+    /* Satellite antenna aperture (in degree) */
+    bool has_aperture;
+    uint32_t aperture;
+    /* Satellite antenna gain (in dBi) */
+    bool has_gain;
+    float gain;
 } meshtastic_TLE;
 
 typedef struct _meshtastic_LEOConfig_TLEAddReplace {
@@ -46,12 +52,6 @@ typedef struct _meshtastic_LEOConfig_TLEAddReplace {
     /* TLE of a satellite to add or to replace */
     bool has_tle;
     meshtastic_TLE tle;
-    /* Satellite antenna aperture (in degree) */
-    bool has_aperture;
-    uint32_t aperture;
-    /* Satellite antenna gain (in dBi) */
-    bool has_gain;
-    float gain;
 } meshtastic_LEOConfig_TLEAddReplace;
 
 typedef struct _meshtastic_LEOConfig_TLERemove {
