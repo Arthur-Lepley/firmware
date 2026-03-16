@@ -12,6 +12,8 @@
 #include "RTC.h"
 #include "GPS.h"
 #include "LeoRouter.h"
+#include <pb_decode.h>
+#include <pb_encode.h>
 
 
 meshtastic_TLEDatabase tleDatabase;
@@ -21,6 +23,25 @@ std::map<uint32_t, P13Satellite> orbits;
 pb_size_t numTLEs;
 
 
+bool meshtastic_TLEDatabase_callback(pb_istream_t *istream, pb_ostream_t *ostream, const pb_field_iter_t *field)
+{
+    if (ostream) {
+        std::vector<meshtastic_TLE> const *vec = (std::vector<meshtastic_TLE> *)field->pData;
+        for (auto item : *vec) {
+            if (!pb_encode_tag_for_field(ostream, field))
+                return false;
+            pb_encode_submessage(ostream, meshtastic_TLE_fields, &item);
+        }
+    }
+    if (istream) {
+        meshtastic_TLE node; // this gets good data
+        std::vector<meshtastic_TLE> *vec = (std::vector<meshtastic_TLE> *)field->pData;
+
+        if (istream->bytes_left && pb_decode(istream, meshtastic_TLE_fields, &node))
+            vec->push_back(node);
+    }
+    return true;
+}
 
 timeWindowTLE getWindow(uint32_t satCat) {
     auto oit = orbits.find(satCat);
