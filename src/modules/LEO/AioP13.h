@@ -137,6 +137,7 @@ public:
     ~P13DateTime();
     
     void add(double p_ddays);
+    void adds(uint32_t seconds);
     void settime(int p_iyear, int p_imonth, int p_iday, int p_ih, int p_im, int p_is);
     void gettime(int &p_iyear, int &p_imon, int &p_iday, int &p_ih, int &p_im, int &p_is);
     void ascii(char *p_cbuf);
@@ -172,10 +173,11 @@ public:
     Vec3 c_vecS, c_vecV;          // Geocentric coordinates
  
     P13Satellite(const char *p_ccSatName, const char *p_ccl1, const char *p_ccl2);
+    P13Satellite(long N, long YE, double TE, double IN, double RA, double EC, double WP, double MA, double MM, double M2, double RV, const char *p_ccnm);
     ~P13Satellite();
-    
+
     void   tle(const char *p_ccSatName, const char *p_ccl1, const char *p_ccl2);
-    //void tle(long N, long YE, double TE, double IN, double RA, double EC, double WP, double MA, double MM, double M2);
+    void tle(long N, long YE, double TE, double IN, double RA, double EC, double WP, double MA, double MM, double M2, double RV, const char *p_ccnm);
     void predict(const P13DateTime &p_dt);
     void   latlon(double &p_dlat, double &p_dlon);
     void   elaz(const P13Observer &p_obs, double &p_del, double &p_daz);

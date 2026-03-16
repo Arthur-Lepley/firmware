@@ -6,13 +6,13 @@
 #define MAX_NUM_TLE 100
 #define TLEDB_CUR_VER 1
 #define TLEDB_MIN_VER 1
-#define ANTENNA_APERTURE = 60 //degrees
+#define ANTENNA_APERTURE 90 //degrees
 
 static constexpr const char *tleDatabaseFileName = "/prefs/tles.proto";
 
 typedef struct _timeWindowTLE {
-    uint32_t start;
-    uint32_t end;
+    time_t start;
+    time_t end;
     uint32_t satCat;
 } timeWindowTLE;
 
@@ -20,8 +20,6 @@ typedef struct _timeWindowTLE {
 class TLE_DB : public ProtobufModule<meshtastic_LEOConfig>
 {
   public:
-    std::vector<meshtastic_TLE> *TLEs;
-    pb_size_t numTLEs;
 
 
     /** Constructor
@@ -33,6 +31,8 @@ class TLE_DB : public ProtobufModule<meshtastic_LEOConfig>
 
     bool resetTLEDatabase();
 
+    bool nextPassage(time_t from, time_t &start, time_t &end);
+
 protected:
 
     /** Called to handle a particular incoming message
@@ -41,3 +41,5 @@ protected:
     */
     virtual bool handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshtastic_LEOConfig *p) override;
 };
+
+extern TLE_DB *tleDB;

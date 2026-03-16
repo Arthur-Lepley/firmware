@@ -175,7 +175,7 @@ void setupModules()
 #endif
     // Example: Put your module here
     // new ReplyModule();
-    new LeoRouter();
+    leoRouter = new LeoRouter();
 #if HAS_SCREEN && !MESHTASTIC_EXCLUDE_CANNEDMESSAGES
     if (config.display.displaymode != meshtastic_Config_DisplayConfig_DisplayMode_COLOR) {
         cannedMessageModule = new CannedMessageModule();
