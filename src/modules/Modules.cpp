@@ -69,6 +69,7 @@
 #endif
 
 #include "modules/LEO/LeoRouter.h"
+#include "modules/LEO/TLE_DB.h"
 
 #ifdef ARCH_ESP32
 #if defined(USE_SX1280) && !MESHTASTIC_EXCLUDE_AUDIO

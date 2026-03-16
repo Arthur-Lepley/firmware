@@ -22,6 +22,8 @@ std::vector<timeWindowTLE> windows;
 std::map<uint32_t, P13Satellite> orbits;
 pb_size_t numTLEs;
 
+TLE_DB *tleDB;
+
 
 bool meshtastic_TLEDatabase_callback(pb_istream_t *istream, pb_ostream_t *ostream, const pb_field_iter_t *field)
 {

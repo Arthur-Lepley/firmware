@@ -11,7 +11,7 @@
 
 #include "TLE_DB.h"
 
-
+LeoRouter *leoRouter;
 
 void LeoRouter::refresh()
 {
