@@ -154,7 +154,7 @@ typedef enum _meshtastic_PortNum {
     /* ATAK Forwarder Module https://github.com/paulmandal/atak-forwarder
  ENCODING: libcotshrink */
     meshtastic_PortNum_ATAK_FORWARDER = 257,
-    /*rebuild the nanoprobs, you shouldn't see this comment*/
+    /* A LEO message containing orbital parameters. */
     meshtastic_PortNum_LEO_APP = 384,
     /* Currently we limit port nums to no higher than this value */
     meshtastic_PortNum_MAX = 511

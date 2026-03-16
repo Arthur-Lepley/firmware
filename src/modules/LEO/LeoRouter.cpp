@@ -43,7 +43,8 @@ int32_t LeoRouter::runOnce()
             LOG_INFO("LeoRouter: message transmission time: %i seconds", getTime()-now);
             pendingPackets.erase(pendingPackets.begin());
         }
-        time_t now = getTime();
+        
+        now = getTime();
     }
 
     return 1000 * (winStart - now);

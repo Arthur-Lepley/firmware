@@ -1,18 +1,19 @@
-#include "configuration.h"
+#include <power/PowerHAL.h>
 #include <map>
-#include "TLE_DB.h"
+
+#include "configuration.h"
 #include "Default.h"
 #include "MeshService.h"
 #include "NodeDB.h"
-#include <power/PowerHAL.h>
 #include "FSCommon.h"
 #include "SPILock.h"
 #include "SafeFile.h"
-#include "AioP13.h"
 #include "RTC.h"
 #include "GPS.h"
-#include "LeoRouter.h"
 
+#include "AioP13.h"
+#include "LeoRouter.h"
+#include "TLE_DB.h"
 
 meshtastic_TLEDatabase tleDatabase;
 P13Observer pObserver;
@@ -20,6 +21,28 @@ std::vector<timeWindowTLE> windows;
 std::map<uint32_t, P13Satellite> orbits;
 pb_size_t numTLEs;
 
+
+bool newTimeWindow(uint32_t satCat) {
+    timeWindowTLE newWin = getWindow(satCat);
+    if (newWin.satCat == 0) {
+        return false;
+    }
+    auto o = windows.begin();
+    while (o != windows.end()) {
+        if (o->satCat == satCat) {
+            LOG_ERROR("TLE_DB: time window already existing for given sat");
+            windows.erase(o);
+            continue;
+        }
+        if (o->start > newWin.start) {
+            windows.insert(o, newWin);
+            return true;
+        }
+        o++;
+    }
+    windows.insert(o, newWin);
+    return true;
+}
 
 TLE_DB::TLE_DB() : ProtobufModule("TLE_database", meshtastic_PortNum_LEO_APP, &meshtastic_LEOConfig_msg) {
     LOG_INFO("Init NodeDB");
@@ -33,14 +56,13 @@ TLE_DB::TLE_DB() : ProtobufModule("TLE_database", meshtastic_PortNum_LEO_APP, &m
     }
 #endif
 
-    //hardcoded TLE size because it is not explicitely given by the nanoproto
-    auto state = nodeDB->loadProto(tleDatabaseFileName, MAX_NUM_TLE * 150, sizeof(meshtastic_TLEDatabase),
+    auto state = nodeDB->loadProto(tleDatabaseFileName, MAX_NUM_TLE * meshtastic_TLE_size, sizeof(meshtastic_TLEDatabase),
                            &meshtastic_TLEDatabase_msg, &tleDatabase);
     if (tleDatabase.version < TLEDB_MIN_VER) {
         LOG_WARN("TLEDatabase %d is old, discard", tleDatabase.version);
         resetTLEDatabase();
     } else {
-        numTLEs = tleDatabase.TLEs.size();
+        numTLEs = tleDatabase.tles.size();
         LOG_INFO("Loaded saved TLEdatabase version %d, with TLE count: %d", tleDatabase.version, numTLEs);
     }
 
@@ -57,7 +79,7 @@ TLE_DB::TLE_DB() : ProtobufModule("TLE_database", meshtastic_PortNum_LEO_APP, &m
     windows = std::vector<timeWindowTLE>();
 
 
-    for (auto o : tleDatabase.TLEs) {
+    for (auto o : tleDatabase.tles) {
         uint32_t satCat = o.N;
         char* satName = "noName";
         P13Satellite pOrbit = P13Satellite(o.N, o.YE, o.TE, o.IN, o.RA, o.EC, o.WP, o.MA, o.MM, o.M2, o.RV, satName);
@@ -99,10 +121,10 @@ bool TLE_DB::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshtastic_
 }
 
 void removeSat(uint32_t satCat) {
-    auto o = tleDatabase.TLEs.begin();
-    while (o != tleDatabase.TLEs.end()) {
+    auto o = tleDatabase.tles.begin();
+    while (o != tleDatabase.tles.end()) {
         if (o->N == satCat) {
-            tleDatabase.TLEs.erase(o);
+            tleDatabase.tles.erase(o);
             numTLEs--;
             break;
         }
@@ -120,7 +142,7 @@ void removeSat(uint32_t satCat) {
 }
 
 void addSat(uint32_t satCat, meshtastic_TLE tle) {
-    tleDatabase.TLEs.push_back(tle);
+    tleDatabase.tles.push_back(tle);
     //TODO: replace with real name
     char* satName = "noName";
     P13Satellite pOrbit = P13Satellite(tle.N, tle.YE, tle.TE, tle.IN, tle.RA, tle.EC, tle.WP, tle.MA, tle.MM, tle.M2, tle.RV, satName);
@@ -159,7 +181,7 @@ bool TLE_DB::resetTLEDatabase() {
     numTLEs = 0;
     tleDatabase = meshtastic_TLEDatabase();
     tleDatabase.version = TLEDB_CUR_VER;
-    tleDatabase.TLEs = std::vector<meshtastic_TLE>();
+    tleDatabase.tles = std::vector<meshtastic_TLE>();
     return saveTLEDatabaseToDisk();
 }
 
@@ -196,27 +218,6 @@ bool TLE_DB::nextPassage(time_t from, time_t &start, time_t &end) {
     return false;
 }
 
-bool newTimeWindow(uint32_t satCat) {
-    timeWindowTLE newWin = getWindow(satCat);
-    if (newWin.satCat == 0) {
-        return false;
-    }
-    auto o = windows.begin();
-    while (o != windows.end()) {
-        if (o->satCat == satCat) {
-            LOG_ERROR("TLE_DB: time window already existing for given sat");
-            windows.erase(o);
-            continue;
-        }
-        if (o->start > newWin.start) {
-            windows.insert(o, newWin);
-            return true;
-        }
-        o++;
-    }
-    windows.insert(o, newWin);
-    return true;
-}
 
 timeWindowTLE getWindow(uint32_t satCat) {
     auto oit = orbits.find(satCat);
@@ -226,7 +227,7 @@ timeWindowTLE getWindow(uint32_t satCat) {
     }
     P13Satellite sat = oit->second;
     int aperture = -1;
-    for (auto o : tleDatabase.TLEs) {
+    for (auto o : tleDatabase.tles) {
         if (o.N == satCat) {
             if(o.has_aperture) {
                 aperture = o.aperture;
