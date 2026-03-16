@@ -40,6 +40,8 @@ protected:
     @return true if you've guaranteed you've handled this message and no other handlers should be considered for it
     */
     virtual bool handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshtastic_LEOConfig *p) override;
+
+    
 };
 
 extern TLE_DB *tleDB;

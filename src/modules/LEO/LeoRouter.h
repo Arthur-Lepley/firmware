@@ -15,7 +15,7 @@ class LeoRouter : private concurrency::OSThread,
     /** Constructor
      * name is for debugging output
      */
-    LeoRouter() : MeshModule("LeoRouter"), concurrency::OSThread("LeoRouter") {
+    LeoRouter() : concurrency::OSThread("LeoRouter"), MeshModule("LeoRouter") {
         isPromiscuous = true;
         loopbackOk = true;
         encryptedOk = true;

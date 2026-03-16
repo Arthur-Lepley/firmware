@@ -7,15 +7,7 @@
 #include "NodeDB.h"
 #include "RTC.h"
 #include "Router.h"
-#include "TypeConversions.h"
-#include "airtime.h"
 #include "configuration.h"
-#include "gps/GeoCoord.h"
-#include "main.h"
-#include "mesh/compression/unishox2.h"
-#include "meshUtils.h"
-#include "sleep.h"
-#include "target_specific.h"
 
 #include "TLE_DB.h"
 
@@ -43,7 +35,7 @@ int32_t LeoRouter::runOnce()
             LOG_INFO("LeoRouter: message transmission time: %i seconds", getTime()-now);
             pendingPackets.erase(pendingPackets.begin());
         }
-        time_t now = getTime();
+        now = getTime();
     }
 
     return 1000 * (winStart - now);
