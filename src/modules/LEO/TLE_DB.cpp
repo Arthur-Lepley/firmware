@@ -72,7 +72,7 @@ timeWindowTLE getWindow(uint32_t satCat) {
     int revolutions = 0;
 
     
-    time_t prevSecs = getTime();
+    time_t prevSecs = getValidTime(RTCQualityNTP);
     time_t newSecs = prevSecs;
     tm *dateRef = gmtime(&prevSecs);
     dateRef->tm_year += 1900; dateRef->tm_mon += 1;
@@ -175,7 +175,7 @@ bool newTimeWindow(uint32_t satCat) {
 
 void updatePredictions() {
     auto first = windows.begin();
-    while (first->end < getTime()){
+    while (first->end < getValidTime(RTCQualityNTP)){
         uint32_t satCat = first->satCat;
         windows.erase(first);
         newTimeWindow(satCat);
@@ -281,7 +281,7 @@ TLE_DB::TLE_DB() : ProtobufModule("TLE_database", meshtastic_PortNum_LEO_APP, &m
         abort();
     };
 
-    LOG_INFO("TLE_DB extracted position: age= lat:%i   lon:%i   alt:%i", getTime() - self->position.time, self->position.latitude_i, self->position.longitude_i, self->position.altitude);
+    LOG_INFO("TLE_DB extracted position: age= lat:%i   lon:%i   alt:%i", getValidTime(RTCQualityNTP) - self->position.time, self->position.latitude_i, self->position.longitude_i, self->position.altitude);
 
     pObserver = P13Observer("LocalNode", self->position.latitude_i, self->position.longitude_i, self->position.altitude);
 
