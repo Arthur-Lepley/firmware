@@ -1,3 +1,4 @@
+#if !MESHTASTIC_EXCLUDE_LEO
 #include "configuration.h"
 #include <map>
 #include "TLE_DB.h"
@@ -10,7 +11,6 @@
 #include "SafeFile.h"
 #include "AioP13.h"
 #include "RTC.h"
-#include "GPS.h"
 #include "LeoRouter.h"
 #include <pb_decode.h>
 #include <pb_encode.h>
@@ -23,6 +23,7 @@ std::map<uint32_t, P13Satellite> orbits;
 pb_size_t numTLEs;
 
 TLE_DB *tleDB;
+bool activated = false;
 
 
 bool meshtastic_TLEDatabase_callback(pb_istream_t *istream, pb_ostream_t *ostream, const pb_field_iter_t *field)
@@ -48,7 +49,7 @@ bool meshtastic_TLEDatabase_callback(pb_istream_t *istream, pb_ostream_t *ostrea
 timeWindowTLE getWindow(uint32_t satCat) {
     auto oit = orbits.find(satCat);
     if (oit == orbits.end()) {
-        LOG_ERROR("TLE_DB tried to get the time window of an unindexed satellite: %i", satCat);
+        LOG_ERROR("TLE_DB tried to get the time window of an unindexed satellite: %d", satCat);
         return {0,0,0};
     }
     P13Satellite sat = oit->second;
@@ -64,15 +65,19 @@ timeWindowTLE getWindow(uint32_t satCat) {
         }
     }
     if (aperture == -1) {
-        LOG_ERROR("TLE_DB: satellite %i referenced in orbits but not in database", satCat);
+        LOG_ERROR("TLE_DB: satellite %d referenced in orbits but not in database", satCat);
         return timeWindowTLE();
     }
     aperture = min(ANTENNA_APERTURE, aperture);
 
     int revolutions = 0;
 
-    
-    time_t prevSecs = getValidTime(RTCQualityNTP);
+    time_t prevSecs = getValidTime(RTCQualityDevice);
+    time_t startT = prevSecs;
+    if (prevSecs == 0) {
+        LOG_WARN("TLE_DB couldn't obtain a time window without a set RTC time");
+        return {0,0,0};
+    }
     time_t newSecs = prevSecs;
     tm *dateRef = gmtime(&prevSecs);
     dateRef->tm_year += 1900; dateRef->tm_mon += 1;
@@ -90,7 +95,7 @@ timeWindowTLE getWindow(uint32_t satCat) {
     bool inRange = false;
     int step = 10;
 
-    while (revolutions < 250) {
+    while (revolutions < 100) {
         if (!inRange) {
             p13TimePrev = P13DateTime(p13TimeNew);
             prevSecs = newSecs;
@@ -106,9 +111,12 @@ timeWindowTLE getWindow(uint32_t satCat) {
 
             if (newElv > (double)90 - aperture/2.f){
                 inRange = true;
+                //LOG_DEBUG("ENTERING RANGE");
             } else if (tickElv < newElv) {
                 step = 60*46;
                 revolutions++;
+                //LOG_DEBUG("revolution n°%d", revolutions);
+                LOG_DEBUG("the device will crash without this log.");
             } else {
                 if (newElv < -40) {
                     step = 20*60;
@@ -140,19 +148,26 @@ timeWindowTLE getWindow(uint32_t satCat) {
                 inRange = false;
                 step = 60*46;
                 revolutions++;
+                LOG_DEBUG("the device will crash without this log.");
+                //LOG_DEBUG("CALCULATION too short");
+                //LOG_DEBUG("revolution n°%d", revolutions);
             } else {
-                return {prevSecs + 1, newSecs -2, satCat};
+                //LOG_DEBUG("CALCULATION found");
+                LOG_DEBUG("CALCULATION: START IN %d SECONDS | LASTS %d SECONDS", (int32_t)(prevSecs + 1 - startT), (int32_t)(newSecs - prevSecs - 3));
+                //LOG_DEBUG("CALCULATION: START: %d | END: %d | NOW: %d", (int32_t)prevSecs, (int32_t)newSecs, (int32_t)startT);
+                return {prevSecs + 1, newSecs - 2, satCat};
             }
         }
     }
     
-    LOG_WARN("TLE_DB: no time window found in 250 revolutions");
+    LOG_WARN("TLE_DB: no time window found in 100 revolutions");
     return {0,0,0};
 
 }
 
 bool newTimeWindow(uint32_t satCat) {
     timeWindowTLE newWin = getWindow(satCat);
+    LOG_DEBUG("New got: START: %d | END: %d | CAT: %d", (int32_t)newWin.timeWinStart, (int32_t)newWin.timeWinEnd, newWin.satCat);
     if (newWin.satCat == 0) {
         return false;
     }
@@ -160,10 +175,10 @@ bool newTimeWindow(uint32_t satCat) {
     while (o != windows.end()) {
         if (o->satCat == satCat) {
             LOG_ERROR("TLE_DB: time window already existing for given sat");
-            windows.erase(o);
+            o = windows.erase(o);
             continue;
         }
-        if (o->start > newWin.start) {
+        if (o->timeWinStart > newWin.timeWinStart) {
             windows.insert(o, newWin);
             return true;
         }
@@ -175,7 +190,11 @@ bool newTimeWindow(uint32_t satCat) {
 
 void updatePredictions() {
     auto first = windows.begin();
-    while (first->end < getValidTime(RTCQualityNTP)){
+    while (first != windows.end() && first->timeWinEnd < getValidTime(RTCQualityDevice)){
+        LOG_DEBUG("regenerating time window that expired %d seconds ago", (int32_t)(getValidTime(RTCQualityDevice) - first->timeWinEnd));
+        LOG_DEBUG("start of the expired: %d seconds ago", (int32_t)(getValidTime(RTCQualityDevice) - first->timeWinStart));
+        LOG_DEBUG("duration of the expired: %d seconds", (int32_t)(first->timeWinEnd - first->timeWinStart));
+        LOG_DEBUG("expired stats: start = %d ; end = %d ; now = %d", (int32_t)(first->timeWinStart), (int32_t)(first->timeWinEnd), (int32_t)(getValidTime(RTCQualityDevice)));
         uint32_t satCat = first->satCat;
         windows.erase(first);
         newTimeWindow(satCat);
@@ -204,14 +223,20 @@ void removeSat(uint32_t satCat) {
     }
 }
 
-void addSat(uint32_t satCat, meshtastic_TLE tle) {
+void addSat(meshtastic_TLE tle) {
     tleDatabase.tles.push_back(tle);
-    //TODO: replace with real name
-    const char satName[] = "noName";
+    const char* satName;
+        if (tle.has_sat_fullname) {
+            satName = tle.sat_fullname;
+        } else {
+            satName = "anon";
+        }
     P13Satellite pOrbit = P13Satellite(tle.N, tle.YE, tle.TE, tle.IN, tle.RA, tle.EC, tle.WP, tle.MA, tle.MM, tle.M2, tle.RV, satName);
-    orbits.emplace(satCat, pOrbit);
+    orbits.emplace(tle.N, pOrbit);
     numTLEs++;
-    newTimeWindow(satCat);
+    if (activated) {
+        newTimeWindow(tle.N);
+    }
 }
 
 
@@ -275,67 +300,47 @@ TLE_DB::TLE_DB() : ProtobufModule("TLE_database", meshtastic_PortNum_LEO_APP, &m
         LOG_INFO("Loaded saved TLEdatabase version %d, with TLE count: %d", tleDatabase.version, numTLEs);
     }
 
-    meshtastic_NodeInfoLite *self = nodeDB->getMeshNode(nodeDB->getNodeNum());
-    if (!self->has_position) {
-        LOG_ERROR("TLE_DB was initialized too quickly; the local node has no position");
-        abort();
-    };
-
-    LOG_INFO("TLE_DB extracted position: age= lat:%i   lon:%i   alt:%i", getValidTime(RTCQualityNTP) - self->position.time, self->position.latitude_i, self->position.longitude_i, self->position.altitude);
-
-    pObserver = P13Observer("LocalNode", self->position.latitude_i, self->position.longitude_i, self->position.altitude);
-
-    windows = std::vector<timeWindowTLE>();
-
-
-    for (auto o : tleDatabase.tles) {
-        uint32_t satCat = o.N;
-        char satName[4] = {'a','n','o','n'};
-        P13Satellite pOrbit = P13Satellite(o.N, o.YE, o.TE, o.IN, o.RA, o.EC, o.WP, o.MA, o.MM, o.M2, o.RV, satName);
-        orbits.emplace(satCat, pOrbit);
-        newTimeWindow(satCat);
-    }
-
 };
 
 bool TLE_DB::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshtastic_LEOConfig *l)
 {
     if (l->which_action == meshtastic_LEOConfig_addreplace_tag) {
-#if defined(DEBUG_PORT) && !defined(DEBUG_MUTE)
         const char *sender = getSenderShortName(mp);
-        LOG_INFO("(Received from %s): ADD/REPLACE TLE: SatNum=%i ; ES=%i", sender,
+        LOG_INFO("(Received from %s): ADD/REPLACE TLE: SatNum=%d ; ES=%d", sender,
                  l->action.addreplace.tle.N, l->action.addreplace.tle.ES);
-#endif
         uint32_t satCat = l->action.addreplace.tle.N;
         removeSat(satCat);
-        addSat(satCat, l->action.addreplace.tle);
+        addSat(l->action.addreplace.tle);
 
     } else if (l->which_action == meshtastic_LEOConfig_remove_tag) {
-#if defined(DEBUG_PORT) && !defined(DEBUG_MUTE)
         const char *sender = getSenderShortName(mp);
-        LOG_INFO("(Received from %s): REMOVE TLE: SatNum=%i", sender, l->action.remove.N);
-#endif
+        LOG_INFO("(Received from %s): REMOVE TLE: SatNum=%d", sender, l->action.remove.N);
         uint32_t satCat = l->action.addreplace.tle.N;
         removeSat(satCat);
 
     } else {
-#if defined(DEBUG_PORT) && !defined(DEBUG_MUTE)
         LOG_ERROR("TLEAction yet no action match");
-#endif
     }
     saveTLEDatabaseToDisk();
-    updatePredictions();
-    leoRouter->refresh();
+    if (activated) {
+        updatePredictions();
+        leoRouter->refresh();
+    }
     return false; // Let others look at this message also if they want
 }
 
 bool TLE_DB::nextPassage(time_t from, time_t &start, time_t &end) {
+    if (!activated) {
+        LOG_ERROR("TLE_DB: nextPassage called before activation");
+        return false;
+    }
+    LOG_DEBUG("TLE_DB: calculating next passage among %d windows out of %d registered satellites", (int32_t)windows.size(), (int32_t)numTLEs);
     updatePredictions();
     auto o = windows.begin();
     while (o != windows.end()) {
-        if (o->end > from) {
-            start = max(from, o->start);
-            end = o->end;
+        if (o->timeWinEnd >= from) {
+            start = max(from, o->timeWinStart);
+            end = o->timeWinEnd;
             if (end - start > 6) {
                 return true;
             }
@@ -344,10 +349,60 @@ bool TLE_DB::nextPassage(time_t from, time_t &start, time_t &end) {
     }
     o = windows.begin();
     if (o != windows.end()) {
-        start = o->end+1;
+        start = o->timeWinEnd+10;
     } else {
         start = 0;
     }
     end = start;
     return false;
 }
+
+bool TLE_DB::isActivated() {return activated;}
+// only activate TLEDB after the device's position and RTC clock have been set
+// do not activate if isActivated() == true
+void TLE_DB::activate() {
+    meshtastic_NodeInfoLite *self = nodeDB->getMeshNode(nodeDB->getNodeNum());
+    if (!self->has_position) {
+        LOG_ERROR("TLE_DB was activated but local node has no position in NodeDB");
+        //abort();
+        return;
+    };
+
+    if (getValidTime(RTCQualityDevice) == 0) {
+        LOG_ERROR("TLE_DB was activated but RTC hasn't been set");
+        //abort();
+        return;
+    };
+    if (isActivated()) {
+        LOG_ERROR("TLE_DB activate() has been called multiple times");
+        return;
+    }
+    LOG_DEBUG("activating TLE_DB");
+    LOG_INFO("TLE_DB extracted position: lat:%d   lon:%d   alt:%d", self->position.latitude_i, self->position.longitude_i, self->position.altitude);
+
+    pObserver = P13Observer("LocalNode", self->position.latitude_i, self->position.longitude_i, self->position.altitude);
+
+    windows = std::vector<timeWindowTLE>();
+
+    
+    LOG_DEBUG("TLE_DB: Calculating time windows for %d satellites", numTLEs);
+
+
+    for (auto o : tleDatabase.tles) {
+        uint32_t satCat = o.N;
+        const char* satName;
+        if (o.has_sat_fullname) {
+            satName = o.sat_fullname;
+        } else {
+            satName = "anon";
+        }
+        //char satName[4] = {'a','n','o','n'};
+        P13Satellite pOrbit = P13Satellite(o.N, o.YE, o.TE, o.IN, o.RA, o.EC, o.WP, o.MA, o.MM, o.M2, o.RV, satName);
+        orbits.emplace(satCat, pOrbit);
+        newTimeWindow(satCat);
+    }
+    activated = true;
+    LOG_DEBUG("TLE_DB activated. Obtained time windows for %d satellites", windows.size());
+}
+
+#endif

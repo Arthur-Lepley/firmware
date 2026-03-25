@@ -19,7 +19,7 @@ class LeoRouter : private concurrency::OSThread,
         isPromiscuous = true;
         loopbackOk = true;
         encryptedOk = true;
-        setIntervalFromNow(1000*9);
+        setIntervalFromNow(1000*10);
     }
 
     void refresh();
@@ -36,8 +36,6 @@ class LeoRouter : private concurrency::OSThread,
 
     virtual ProcessMessage handleReceived(const meshtastic_MeshPacket &mp) override;
 
-  private:
-    bool firstTime = true;
 };
 
 extern LeoRouter *leoRouter;

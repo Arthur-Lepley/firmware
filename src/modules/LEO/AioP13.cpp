@@ -319,7 +319,7 @@ P13Observer::P13Observer(const char *p_ccnm, double p_dlat, double p_dlon, doubl
 
 P13Observer::~P13Observer() {
     if (c_ccObsName) {
-        delete c_ccObsName;
+        delete [] c_ccObsName;
     }    
 }
 

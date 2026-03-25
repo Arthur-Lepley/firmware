@@ -11,8 +11,8 @@
 static constexpr const char *tleDatabaseFileName = "/prefs/tles.proto";
 
 typedef struct _timeWindowTLE {
-    time_t start;
-    time_t end;
+    time_t timeWinStart;
+    time_t timeWinEnd;
     uint32_t satCat;
 } timeWindowTLE;
 
@@ -32,6 +32,9 @@ class TLE_DB : public ProtobufModule<meshtastic_LEOConfig>
     bool resetTLEDatabase();
 
     bool nextPassage(time_t from, time_t &start, time_t &end);
+
+    void activate();
+    bool isActivated();
 
 protected:
 
