@@ -96,7 +96,6 @@ class Router : protected concurrency::OSThread, protected PacketHistory
 
   protected:
     friend class RoutingModule;
-    friend class LeoRouter;
 
     /**
      * Should this incoming filter be dropped?

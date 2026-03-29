@@ -10,6 +10,7 @@
 #include "meshtastic/localonly.pb.h"
 #include "meshtastic/mesh.pb.h"
 #include "meshtastic/telemetry.pb.h"
+#include "meshtastic/leo.pb.h"
 
 #if PB_PROTO_HEADER_VERSION != 40
 #error Regenerate this file with the current version of nanopb generator.
@@ -152,6 +153,15 @@ typedef struct _meshtastic_NodeDatabase {
     std::vector<meshtastic_NodeInfoLite> nodes;
 } meshtastic_NodeDatabase;
 
+typedef struct _meshtastic_TLEDatabase {
+    /* A version integer used to invalidate old save files when we make
+ incompatible changes This integer is set at build time and is private to
+ NodeDB.cpp in the device code. */
+    uint32_t version;
+    /* New lite version of NodeDB to decrease memory footprint */
+    std::vector<meshtastic_TLE> tles;
+} meshtastic_TLEDatabase;
+
 /* The on-disk saved channels */
 typedef struct _meshtastic_ChannelFile {
     /* The channels our node knows about */
@@ -194,6 +204,7 @@ extern "C" {
 #define meshtastic_NodeInfoLite_init_default     {0, false, meshtastic_UserLite_init_default, false, meshtastic_PositionLite_init_default, 0, 0, false, meshtastic_DeviceMetrics_init_default, 0, 0, false, 0, 0, 0, 0, 0}
 #define meshtastic_DeviceState_init_default      {false, meshtastic_MyNodeInfo_init_default, false, meshtastic_User_init_default, 0, {meshtastic_MeshPacket_init_default}, false, meshtastic_MeshPacket_init_default, 0, 0, 0, false, meshtastic_MeshPacket_init_default, 0, {meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default, meshtastic_NodeRemoteHardwarePin_init_default}}
 #define meshtastic_NodeDatabase_init_default     {0, {0}}
+#define meshtastic_TLEDatabase_init_default      {0, {0}}
 #define meshtastic_ChannelFile_init_default      {0, {meshtastic_Channel_init_default, meshtastic_Channel_init_default, meshtastic_Channel_init_default, meshtastic_Channel_init_default, meshtastic_Channel_init_default, meshtastic_Channel_init_default, meshtastic_Channel_init_default, meshtastic_Channel_init_default}, 0}
 #define meshtastic_BackupPreferences_init_default {0, 0, false, meshtastic_LocalConfig_init_default, false, meshtastic_LocalModuleConfig_init_default, false, meshtastic_ChannelFile_init_default, false, meshtastic_User_init_default}
 #define meshtastic_PositionLite_init_zero        {0, 0, 0, 0, _meshtastic_Position_LocSource_MIN}
@@ -201,6 +212,7 @@ extern "C" {
 #define meshtastic_NodeInfoLite_init_zero        {0, false, meshtastic_UserLite_init_zero, false, meshtastic_PositionLite_init_zero, 0, 0, false, meshtastic_DeviceMetrics_init_zero, 0, 0, false, 0, 0, 0, 0, 0}
 #define meshtastic_DeviceState_init_zero         {false, meshtastic_MyNodeInfo_init_zero, false, meshtastic_User_init_zero, 0, {meshtastic_MeshPacket_init_zero}, false, meshtastic_MeshPacket_init_zero, 0, 0, 0, false, meshtastic_MeshPacket_init_zero, 0, {meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero, meshtastic_NodeRemoteHardwarePin_init_zero}}
 #define meshtastic_NodeDatabase_init_zero        {0, {0}}
+#define meshtastic_TLEDatabase_init_zero         {0, {0}}
 #define meshtastic_ChannelFile_init_zero         {0, {meshtastic_Channel_init_zero, meshtastic_Channel_init_zero, meshtastic_Channel_init_zero, meshtastic_Channel_init_zero, meshtastic_Channel_init_zero, meshtastic_Channel_init_zero, meshtastic_Channel_init_zero, meshtastic_Channel_init_zero}, 0}
 #define meshtastic_BackupPreferences_init_zero   {0, 0, false, meshtastic_LocalConfig_init_zero, false, meshtastic_LocalModuleConfig_init_zero, false, meshtastic_ChannelFile_init_zero, false, meshtastic_User_init_zero}
 
@@ -242,6 +254,8 @@ extern "C" {
 #define meshtastic_DeviceState_node_remote_hardware_pins_tag 13
 #define meshtastic_NodeDatabase_version_tag      1
 #define meshtastic_NodeDatabase_nodes_tag        2
+#define meshtastic_TLEDatabase_version_tag       1
+#define meshtastic_TLEDatabase_tles_tag          2
 #define meshtastic_ChannelFile_channels_tag      1
 #define meshtastic_ChannelFile_version_tag       2
 #define meshtastic_BackupPreferences_version_tag 1
@@ -320,6 +334,14 @@ extern bool meshtastic_NodeDatabase_callback(pb_istream_t *istream, pb_ostream_t
 #define meshtastic_NodeDatabase_DEFAULT NULL
 #define meshtastic_NodeDatabase_nodes_MSGTYPE meshtastic_NodeInfoLite
 
+#define meshtastic_TLEDatabase_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   version,           1) \
+X(a, CALLBACK, REPEATED, MESSAGE,  tles,              2)
+extern bool meshtastic_TLEDatabase_callback(pb_istream_t *istream, pb_ostream_t *ostream, const pb_field_t *field);
+#define meshtastic_TLEDatabase_CALLBACK meshtastic_TLEDatabase_callback
+#define meshtastic_TLEDatabase_DEFAULT NULL
+#define meshtastic_TLEDatabase_tles_MSGTYPE meshtastic_TLE
+
 #define meshtastic_ChannelFile_FIELDLIST(X, a) \
 X(a, STATIC,   REPEATED, MESSAGE,  channels,          1) \
 X(a, STATIC,   SINGULAR, UINT32,   version,           2)
@@ -346,6 +368,7 @@ extern const pb_msgdesc_t meshtastic_UserLite_msg;
 extern const pb_msgdesc_t meshtastic_NodeInfoLite_msg;
 extern const pb_msgdesc_t meshtastic_DeviceState_msg;
 extern const pb_msgdesc_t meshtastic_NodeDatabase_msg;
+extern const pb_msgdesc_t meshtastic_TLEDatabase_msg;
 extern const pb_msgdesc_t meshtastic_ChannelFile_msg;
 extern const pb_msgdesc_t meshtastic_BackupPreferences_msg;
 
@@ -355,11 +378,13 @@ extern const pb_msgdesc_t meshtastic_BackupPreferences_msg;
 #define meshtastic_NodeInfoLite_fields &meshtastic_NodeInfoLite_msg
 #define meshtastic_DeviceState_fields &meshtastic_DeviceState_msg
 #define meshtastic_NodeDatabase_fields &meshtastic_NodeDatabase_msg
+#define meshtastic_TLEDatabase_fields &meshtastic_TLEDatabase_msg
 #define meshtastic_ChannelFile_fields &meshtastic_ChannelFile_msg
 #define meshtastic_BackupPreferences_fields &meshtastic_BackupPreferences_msg
 
 /* Maximum encoded size of messages (where known) */
 /* meshtastic_NodeDatabase_size depends on runtime parameters */
+/* meshtastic_TLEDatabase_size depends on runtime parameters */
 #define MESHTASTIC_MESHTASTIC_DEVICEONLY_PB_H_MAX_SIZE meshtastic_BackupPreferences_size
 #define meshtastic_BackupPreferences_size        2362
 #define meshtastic_ChannelFile_size              718

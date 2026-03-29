@@ -1,40 +1,41 @@
 #pragma once
-#include "Channels.h"
-#include "ProtobufModule.h"
+#include "MeshModule.h"
+#include "Router.h"
 
 /**
- * Routing module for router control messages
+ * Module in charge of capturing every outgoing packet to the mesh, then making a copy of them to retransmit them when a satellites flies in range of the node.
  */
-class LeoRouter : public ProtobufModule<meshtastic_Routing>
+class LeoRouter : private concurrency::OSThread,
+                         public MeshModule
 {
+  protected:
+    std::vector<meshtastic_MeshPacket *> pendingPackets;
+
   public:
     /** Constructor
      * name is for debugging output
      */
-    LeoRouter();
+    LeoRouter() : concurrency::OSThread("LeoRouter"), MeshModule("LeoRouter") {
+        isPromiscuous = true;
+        loopbackOk = true;
+        encryptedOk = true;
+        setIntervalFromNow(1000*10);
+    }
 
-    virtual void sendAckNak(meshtastic_Routing_Error err, NodeNum to, PacketId idFrom, ChannelIndex chIndex, uint8_t hopLimit = 0,
-                            bool ackWantsAck = false);
+    void refresh();
 
-    meshtastic_MeshPacket *allocAckNak(meshtastic_Routing_Error err, NodeNum to, PacketId idFrom, ChannelIndex chIndex,
-                                       uint8_t hopLimit = 0);
 
-    // Given the hopStart and hopLimit upon reception of a request, return the hop limit to use for the response
-    uint8_t getHopLimitForResponse(const meshtastic_MeshPacket &mp);
 
   protected:
-    friend class Router;
-
-    /** Called to handle a particular incoming message
-
-    @return true if you've guaranteed you've handled this message and no other handlers should be considered for it
-    */
-    virtual bool handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshtastic_Routing *p) override;
-
-    /** Messages can be received that have the want_response bit set.  If set, this callback will be invoked
-     * so that subclasses can (optionally) send a response back to the original sender.  */
-    virtual meshtastic_MeshPacket *allocReply() override;
-
-    /// Override wantPacket to say we want to see all packets, not just those for our port number
+    /**
+     * @return true if you want to receive the specified portnum
+     */
     virtual bool wantPacket(const meshtastic_MeshPacket *p) override { return true; }
+
+    virtual int32_t runOnce() override;
+
+    virtual ProcessMessage handleReceived(const meshtastic_MeshPacket &mp) override;
+
 };
+
+extern LeoRouter *leoRouter;

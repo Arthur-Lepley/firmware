@@ -1,91 +1,112 @@
+#if !MESHTASTIC_EXCLUDE_LEO
 #include "LeoRouter.h"
+
 #include "Default.h"
 #include "MeshService.h"
 #include "NodeDB.h"
+#include "RTC.h"
 #include "Router.h"
 #include "configuration.h"
-#include "main.h"
 
-bool LeoRouter::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshtastic_Routing *r)
+#include "TLE_DB.h"
+
+LeoRouter *leoRouter;
+
+/**
+ * Called by another module when changes to the satellite passage predictions have happened.
+ */
+void LeoRouter::refresh()
 {
-    bool maybePKI = mp.which_payload_variant == meshtastic_MeshPacket_encrypted_tag && mp.channel == 0 && !isBroadcast(mp.to);
-    // Beginning of logic whether to drop the packet based on Rebroadcast mode
-    if (mp.which_payload_variant == meshtastic_MeshPacket_encrypted_tag &&
-        (config.device.rebroadcast_mode == meshtastic_Config_DeviceConfig_RebroadcastMode_LOCAL_ONLY ||
-         config.device.rebroadcast_mode == meshtastic_Config_DeviceConfig_RebroadcastMode_KNOWN_ONLY)) {
-        if (!maybePKI)
-            return false;
-        if ((nodeDB->getMeshNode(mp.from) == NULL || !nodeDB->getMeshNode(mp.from)->has_user) &&
-            (nodeDB->getMeshNode(mp.to) == NULL || !nodeDB->getMeshNode(mp.to)->has_user))
-            return false;
-    } else if (owner.is_licensed && nodeDB->getLicenseStatus(mp.from) == UserLicenseStatus::NotLicensed) {
-        // Don't let licensed users to rebroadcast packets from unlicensed users
-        // If we know they are in-fact unlicensed
-        LOG_DEBUG("Packet from unlicensed user, ignoring packet");
-        return false;
-    }
-
-    printPacket("Routing sniffing", &mp);
-    router->sniffReceived(&mp, r);
-
-    // FIXME - move this to a non promsicious PhoneAPI module?
-    // Note: we are careful not to send back packets that started with the phone back to the phone
-    if ((isBroadcast(mp.to) || isToUs(&mp)) && (mp.from != 0)) {
-        printPacket("Delivering rx packet", &mp);
-        service->handleFromRadio(&mp);
-    }
-
-    return false; // Let others look at this message also if they want
+    this->run();
 }
 
-meshtastic_MeshPacket *LeoRouter::allocReply()
+/**
+ * If the TLE database has not been activated, activates it if possible.
+ * If a satellite is currently in view, transmits every packet in the queue.
+ * Waits until the next satellite passage to run again.
+ */
+int32_t LeoRouter::runOnce()
 {
-    assert(currentRequest);
+    LOG_DEBUG("running");
 
-    return NULL;
-}
-
-void LeoRouter::sendAckNak(meshtastic_Routing_Error err, NodeNum to, PacketId idFrom, ChannelIndex chIndex, uint8_t hopLimit,
-                               bool ackWantsAck)
-{
-    auto p = allocAckNak(err, to, idFrom, chIndex, hopLimit);
-
-    // Allow the caller to set want_ack on this ACK packet if it's important that the ACK be delivered reliably
-    p->want_ack = ackWantsAck;
-
-    router->sendLocal(p); // we sometimes send directly to the local node
-}
-
-uint8_t LeoRouter::getHopLimitForResponse(const meshtastic_MeshPacket &mp)
-{
-    const int8_t hopsUsed = getHopsAway(mp);
-    if (hopsUsed >= 0) {
-        if (hopsUsed > (int32_t)(config.lora.hop_limit)) {
-// In event mode, we never want to send packets with more than our default 3 hops.
-#if !(EVENTMODE)             // This falls through to the default.
-            return hopsUsed; // If the request used more hops than the limit, use the same amount of hops
-#endif
-        } else if (mp.hop_start == 0) {
-            return 0; // The requesting node wanted 0 hops, so the response also uses a direct/local path.
-        } else if ((uint8_t)(hopsUsed + 2) < config.lora.hop_limit) {
-            return hopsUsed + 2; // Use only the amount of hops needed with some margin as the way back may be different
+    if (!tleDB->isActivated()) {
+        time_t activationTime = getValidTime(RTCQualityDevice);
+        if (!nodeDB->getMeshNode(nodeDB->getNodeNum())->has_position) {
+            LOG_WARN("local node has no position");
+            return 1000 * 45;
         }
+        if (activationTime == 0) {
+            LOG_WARN("no RTC time set");
+            return 1000 * 45;
+        }
+        tm *dateRef = gmtime(&activationTime);
+        dateRef->tm_year += 1900; dateRef->tm_mon += 1;
+        LOG_DEBUG("current date: %d/%d/%d ; %d:%d : %d", dateRef->tm_mday, dateRef->tm_mon, dateRef->tm_year, dateRef->tm_hour, dateRef->tm_min, dateRef->tm_sec);
+
+        tleDB->activate();
+        LOG_DEBUG("tleDB activation took around %d seconds", (getValidTime(RTCQualityDevice) - activationTime));
     }
-    return Default::getConfiguredOrDefaultHopLimit(config.lora.hop_limit); // Use the default hop limit
+
+    time_t winStart;
+    time_t winEnd;
+    time_t now = getValidTime(RTCQualityDevice);
+
+    while (tleDB->nextPassage(now, winStart, winEnd) && now+1 >= winStart) {
+        if (pendingPackets.empty()) {
+            LOG_INFO("LEORouter: no packets to transmit in the queue");
+            return 1000 * 15;
+        }
+        LOG_INFO("LEORouter: starting transmission. %d pending packets ; %d window seconds left.", pendingPackets.size(), (int32_t)(winEnd - now));
+        meshtastic_MeshPacket* p = pendingPackets.front();
+        ErrorCode txResult = router->send(p);
+        if (txResult == meshtastic_Routing_Error_NONE) {
+            LOG_INFO("LeoRouter: message transmission time: %d seconds", (int32_t)(getValidTime(RTCQualityDevice)-now));
+            pendingPackets.erase(pendingPackets.begin());
+        } else {
+            LOG_INFO("LeoRouter: message transmission went wrong: code %d", txResult);
+        }
+        now = getValidTime(RTCQualityDevice);
+    }
+
+    if (tleDB->nextPassage(getValidTime(RTCQualityDevice), winStart, winEnd)) {
+        now = getValidTime(RTCQualityDevice);
+        LOG_DEBUG("LEORouter: next emission in %d seconds and lasts %d seconds", (int32_t) (winStart - now), (int32_t) (winEnd - winStart));
+        //LOG_DEBUG("winStart: %d | winEnd: %d | now: %d", (int32_t)(winStart), (int32_t)(winEnd), (int32_t)(now));
+        if (winStart - now <= 1) {
+            LOG_DEBUG("next run in one second");
+            return 1000;
+        } else {
+            LOG_DEBUG("next run in %d seconds", (int32_t) (winStart - now));
+            return 1000 * (winStart - now);
+        }
+    } else {
+        LOG_DEBUG("LEORouter: no satellite flyover time window found");
+        return 1000 * 60;
+    }
 }
 
-meshtastic_MeshPacket *LeoRouter::allocAckNak(meshtastic_Routing_Error err, NodeNum to, PacketId idFrom, ChannelIndex chIndex,
-                                                  uint8_t hopLimit)
-{
-    return MeshModule::allocAckNak(err, to, idFrom, chIndex, hopLimit);
+/**
+ * Unless a satellite is in range right now, makes a copy of the packet for later retransmission.
+ */
+ProcessMessage LeoRouter::handleReceived(const meshtastic_MeshPacket &mp) {
+
+    time_t winStart;
+    time_t winEnd;
+    time_t now = getValidTime(RTCQualityDevice);
+    if (!tleDB->isActivated()) {
+        LOG_DEBUG("LEORouter: TLE_DB not activated, ignoring packet");
+        return ProcessMessage::CONTINUE;
+    }
+
+    if (!(tleDB->nextPassage(now-10, winStart, winEnd) && now >= winStart)) {
+        meshtastic_MeshPacket* copy = packetPool.allocCopy(mp);
+        pendingPackets.push_back(copy);
+        LOG_DEBUG("LEORouter: saved packet");
+    } else {
+        LOG_DEBUG("LEORouter: ignored packet during window");
+    }
+    return ProcessMessage::CONTINUE;
 }
 
-LeoRouter::LeoRouter() : ProtobufModule("routing", meshtastic_PortNum_ROUTING_APP, &meshtastic_Routing_msg)
-{
-    isPromiscuous = true;
 
-    // moved the RebroadcastMode logic into handleReceivedProtobuf
-    // LocalOnly requires either the from or to to be a known node
-    // knownOnly specifically requires the from to be a known node.
-    encryptedOk = true;
-}
+#endif

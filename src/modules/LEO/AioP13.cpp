@@ -208,6 +208,10 @@ void P13DateTime::add(double p_ddays) {
     c_dTN -= (long)c_dTN;
 }
 
+void P13DateTime::adds(uint32_t seconds) {
+    add((double) seconds / (double) 86400);
+}
+
 
 void P13DateTime::settime(int p_iyear, int p_imonth, int p_iday, int p_ih, int p_im, int p_is) {
     
@@ -315,7 +319,7 @@ P13Observer::P13Observer(const char *p_ccnm, double p_dlat, double p_dlon, doubl
 
 P13Observer::~P13Observer() {
     if (c_ccObsName) {
-        delete c_ccObsName;
+        delete [] c_ccObsName;
     }    
 }
 
@@ -331,6 +335,12 @@ P13Satellite::P13Satellite(const char *p_ccnm, const char *p_ccl1, const char *p
     c_ccSatName = nullptr;
     tle(p_ccnm, p_ccl1, p_ccl2);
 }
+
+P13Satellite::P13Satellite(long N, long YE, double TE, double IN, double RA, double EC, double WP, double MA, double MM, double M2, double RV, const char *p_ccnm) {
+    c_ccSatName = nullptr;
+    tle(N, YE, TE, IN, RA, EC, WP, MA, MM, M2, RV, p_ccnm);
+}
+
 
 P13Satellite::~P13Satellite() {
     if (c_ccSatName) {
@@ -373,6 +383,72 @@ void P13Satellite::tle(const char *p_ccnm, const char *p_ccl1, const char *p_ccl
     cp_dMA = radians(getdouble(p_ccl2, 43, 51));    // Get mean anomaly (degrees) from tle:l2:43..50
     cp_dMM = 2.0 * PI * getdouble(p_ccl2, 52, 63);  // Get mean motion from tle:l2:52..62
     cp_dRV = getlong(p_ccl2, 63, 68);               // Get Revolution number at epoch (revolutions) from tle:l2:63..67
+
+    // Derived quantities from the orbital elements 
+
+    // convert TE to DE and TE 
+    cp_lDE = fnday(cp_lYE, 1, 0) + (long)cp_dTE;
+    
+    cp_dTE -= (long)cp_dTE;
+
+    cp_dN0  = cp_dMM / 86400.0;
+    cp_dA_0 = pow(g_scdGM / (cp_dN0 * cp_dN0), 1.0/3.0);
+    cp_dB_0 = cp_dA_0 * sqrt(1.0 - cp_dEC * cp_dEC);
+    
+    cp_dPC  = g_scdRE * cp_dA_0 / (cp_dB_0 * cp_dB_0);
+    cp_dPC  = 1.5 * g_scdJ2 * cp_dPC * cp_dPC * cp_dMM;
+    
+    l_dCI = cos(cp_dIN);
+    cp_dQD = -cp_dPC * l_dCI;
+    cp_dWD =  cp_dPC * (5.0 * l_dCI * l_dCI - 1.0) / 2.0;
+    cp_dDC = -2.0 * cp_dM2 / (3.0 * cp_dMM);
+}
+
+void P13Satellite::tle(long N, long YE, double TE, double IN, double RA, double EC, double WP, double MA, double MM, double M2, double RV, const char *p_ccnm) {
+    /*
+    long            N		= 1;		// Satellite catalog number from tle:l1:2..6
+	long   	    	YE		= 2;		// Epoch year from tle:l1:18..19    														year
+	float 			TE		= 3;		// Epoch (day of the year and fractional portion of the day) from tle:l1:20..31    			days
+	float 			IN		= 4;		// Inclination (degrees) from tle:l2:8..15
+	float 			RA		= 5;		// R.A.A.N (degrees) from tle:l2:17..24      												deg
+	float 			EC		= 6;		// Eccentricity from tle:l2:26..32  			 											-
+	float 			WP		= 7;		// Get argument of perigee (degrees) from tle:l2:34..41   			deg
+	float 			MA		= 8;		// Mean anomaly (degrees) from tle:l2:43..50  			deg
+	float 			MM		= 9;		// Mean motion from tle:l2:52..62   			rev/d
+	float 			M2		= 10;		// First time derivative of the mean motion divided by to from tle:l1:33..42    			rev/d/d
+	long 			RV      = 11;       // Revolution number at epoch (revolutions) from tle:l2:63..67  	
+    */
+    double l_dCI;
+    
+    uint8_t len = strlen(p_ccnm)%256;
+    if (c_ccSatName) {
+        delete c_ccSatName;
+    }
+    c_ccSatName = new char[len+1];
+    strncpy(c_ccSatName, p_ccnm, len);
+    c_ccSatName[len] = '\0';
+
+
+    // Direct quantities from the orbital elements
+
+    cp_lN  = N;               // Get satellite catalog number from tle:l1:2..6
+    cp_lYE = YE;               // Get epoch year from tle:l1:18..19
+        
+    if ( cp_lYE < 58 )
+        cp_lYE += 2000;
+    else
+        cp_lYE += 1900;
+
+    cp_dTE = TE;             // Get epoch (day of the year and fractional portion of the day) from tle:l1:20..31
+    cp_dM2 = 2.0 * PI * M2;  // Get first time derivative of the mean motion divided by to from tle:l1:33..42
+
+    cp_dIN = radians(IN);     // Get inclination (degrees) from tle:l2:8..15
+    cp_dRA = radians(RA);    // Get R.A.A.N (degrees) from tle:l2:17..24
+    cp_dEC = EC / 1.0E7;     // Get eccentricity from tle:l2:26..32
+    cp_dWP = radians(WP);    // Get argument of perigee (degrees) from tle:l2:34..41
+    cp_dMA = radians(MA);    // Get mean anomaly (degrees) from tle:l2:43..50
+    cp_dMM = 2.0 * PI * MM;  // Get mean motion from tle:l2:52..62
+    cp_dRV = RV;               // Get Revolution number at epoch (revolutions) from tle:l2:63..67
 
     // Derived quantities from the orbital elements 
 

@@ -29,7 +29,8 @@ typedef struct _meshtastic_TLE {
     uint32_t ES; /* Element set number. Incremented when a new TLE is generated for this object from tle:l1:64..67 */
     /* *
  @brief (human-readable) Full name */
-    pb_callback_t sat_fullname;
+    bool has_sat_fullname;
+    char sat_fullname[40];
     /* *
  @brief Constellation id (for future use) : the constellation contains a LoRaConfig message */
     bool has_constellation_id;
@@ -38,6 +39,12 @@ typedef struct _meshtastic_TLE {
  @brief Unix-epoch time of the last update of the TLE (for the TLE DB) */
     bool has_last_update_time;
     uint32_t last_update_time;
+    /* Satellite antenna aperture (in degree) */
+    bool has_aperture;
+    uint32_t aperture;
+    /* Satellite antenna gain (in dBi) */
+    bool has_gain;
+    float gain;
 } meshtastic_TLE;
 
 typedef struct _meshtastic_LEOConfig_TLEAddReplace {
@@ -46,12 +53,6 @@ typedef struct _meshtastic_LEOConfig_TLEAddReplace {
     /* TLE of a satellite to add or to replace */
     bool has_tle;
     meshtastic_TLE tle;
-    /* Satellite antenna aperture (in degree) */
-    bool has_aperture;
-    uint32_t aperture;
-    /* Satellite antenna gain (in dBi) */
-    bool has_gain;
-    float gain;
 } meshtastic_LEOConfig_TLEAddReplace;
 
 typedef struct _meshtastic_LEOConfig_TLERemove {
@@ -80,13 +81,13 @@ extern "C" {
 #endif
 
 /* Initializer values for message structs */
-#define meshtastic_TLE_init_default              {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, {{NULL}, NULL}, false, 0, false, 0}
+#define meshtastic_TLE_init_default              {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, "", false, 0, false, 0, false, 0, false, 0}
 #define meshtastic_LEOConfig_init_default        {0, {meshtastic_LEOConfig_TLEAddReplace_init_default}, {{NULL}, NULL}}
-#define meshtastic_LEOConfig_TLEAddReplace_init_default {0, false, meshtastic_TLE_init_default, false, 0, false, 0}
+#define meshtastic_LEOConfig_TLEAddReplace_init_default {0, false, meshtastic_TLE_init_default}
 #define meshtastic_LEOConfig_TLERemove_init_default {0}
-#define meshtastic_TLE_init_zero                 {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, {{NULL}, NULL}, false, 0, false, 0}
+#define meshtastic_TLE_init_zero                 {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, "", false, 0, false, 0, false, 0, false, 0}
 #define meshtastic_LEOConfig_init_zero           {0, {meshtastic_LEOConfig_TLEAddReplace_init_zero}, {{NULL}, NULL}}
-#define meshtastic_LEOConfig_TLEAddReplace_init_zero {0, false, meshtastic_TLE_init_zero, false, 0, false, 0}
+#define meshtastic_LEOConfig_TLEAddReplace_init_zero {0, false, meshtastic_TLE_init_zero}
 #define meshtastic_LEOConfig_TLERemove_init_zero {0}
 
 /* Field tags (for use in manual encoding/decoding) */
@@ -105,10 +106,10 @@ extern "C" {
 #define meshtastic_TLE_sat_fullname_tag          13
 #define meshtastic_TLE_constellation_id_tag      14
 #define meshtastic_TLE_last_update_time_tag      15
+#define meshtastic_TLE_aperture_tag              16
+#define meshtastic_TLE_gain_tag                  17
 #define meshtastic_LEOConfig_TLEAddReplace_is_test_tag 1
 #define meshtastic_LEOConfig_TLEAddReplace_tle_tag 2
-#define meshtastic_LEOConfig_TLEAddReplace_aperture_tag 3
-#define meshtastic_LEOConfig_TLEAddReplace_gain_tag 4
 #define meshtastic_LEOConfig_TLERemove_N_tag     1
 #define meshtastic_LEOConfig_addreplace_tag      1
 #define meshtastic_LEOConfig_remove_tag          2
@@ -128,10 +129,12 @@ X(a, STATIC,   SINGULAR, FLOAT,    MM,                9) \
 X(a, STATIC,   SINGULAR, FLOAT,    M2,               10) \
 X(a, STATIC,   SINGULAR, UINT32,   RV,               11) \
 X(a, STATIC,   SINGULAR, UINT32,   ES,               12) \
-X(a, CALLBACK, OPTIONAL, STRING,   sat_fullname,     13) \
+X(a, STATIC,   OPTIONAL, STRING,   sat_fullname,     13) \
 X(a, STATIC,   OPTIONAL, UINT32,   constellation_id,  14) \
-X(a, STATIC,   OPTIONAL, UINT32,   last_update_time,  15)
-#define meshtastic_TLE_CALLBACK pb_default_field_callback
+X(a, STATIC,   OPTIONAL, UINT32,   last_update_time,  15) \
+X(a, STATIC,   OPTIONAL, UINT32,   aperture,         16) \
+X(a, STATIC,   OPTIONAL, FLOAT,    gain,             17)
+#define meshtastic_TLE_CALLBACK NULL
 #define meshtastic_TLE_DEFAULT NULL
 
 #define meshtastic_LEOConfig_FIELDLIST(X, a) \
@@ -145,9 +148,7 @@ X(a, CALLBACK, OPTIONAL, BYTES,    signature,         3)
 
 #define meshtastic_LEOConfig_TLEAddReplace_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     is_test,           1) \
-X(a, STATIC,   OPTIONAL, MESSAGE,  tle,               2) \
-X(a, STATIC,   OPTIONAL, UINT32,   aperture,          3) \
-X(a, STATIC,   OPTIONAL, FLOAT,    gain,              4)
+X(a, STATIC,   OPTIONAL, MESSAGE,  tle,               2)
 #define meshtastic_LEOConfig_TLEAddReplace_CALLBACK NULL
 #define meshtastic_LEOConfig_TLEAddReplace_DEFAULT NULL
 #define meshtastic_LEOConfig_TLEAddReplace_tle_MSGTYPE meshtastic_TLE
@@ -169,11 +170,11 @@ extern const pb_msgdesc_t meshtastic_LEOConfig_TLERemove_msg;
 #define meshtastic_LEOConfig_TLERemove_fields &meshtastic_LEOConfig_TLERemove_msg
 
 /* Maximum encoded size of messages (where known) */
-/* meshtastic_TLE_size depends on runtime parameters */
 /* meshtastic_LEOConfig_size depends on runtime parameters */
-/* meshtastic_LEOConfig_TLEAddReplace_size depends on runtime parameters */
-#define MESHTASTIC_MESHTASTIC_LEO_PB_H_MAX_SIZE  meshtastic_LEOConfig_TLERemove_size
+#define MESHTASTIC_MESHTASTIC_LEO_PB_H_MAX_SIZE  meshtastic_LEOConfig_TLEAddReplace_size
+#define meshtastic_LEOConfig_TLEAddReplace_size  135
 #define meshtastic_LEOConfig_TLERemove_size      6
+#define meshtastic_TLE_size                      130
 
 #ifdef __cplusplus
 } /* extern "C" */

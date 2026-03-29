@@ -69,6 +69,7 @@
 #endif
 
 #include "modules/LEO/LeoRouter.h"
+#include "modules/LEO/TLE_DB.h"
 
 #ifdef ARCH_ESP32
 #if defined(USE_SX1280) && !MESHTASTIC_EXCLUDE_AUDIO
@@ -175,7 +176,6 @@ void setupModules()
 #endif
     // Example: Put your module here
     // new ReplyModule();
-    new LeoRouter();
 #if HAS_SCREEN && !MESHTASTIC_EXCLUDE_CANNEDMESSAGES
     if (config.display.displaymode != meshtastic_Config_DisplayConfig_DisplayMode_COLOR) {
         cannedMessageModule = new CannedMessageModule();
@@ -248,6 +248,8 @@ void setupModules()
 #if defined(HAS_HARDWARE_WATCHDOG)
     watchdogThread = new WatchdogThread();
 #endif
+    tleDB = new TLE_DB();
+    leoRouter = new LeoRouter();
     // NOTE! This module must be added LAST because it likes to check for replies from other modules and avoid sending extra
     // acks
     routingModule = new RoutingModule();
