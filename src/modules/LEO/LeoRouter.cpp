@@ -12,11 +12,19 @@
 
 LeoRouter *leoRouter;
 
+/**
+ * Called by another module when changes to the satellite passage predictions have happened.
+ */
 void LeoRouter::refresh()
 {
     this->run();
 }
 
+/**
+ * If the TLE database has not been activated, activates it if possible.
+ * If a satellite is currently in view, transmits every packet in the queue.
+ * Waits until the next satellite passage to run again.
+ */
 int32_t LeoRouter::runOnce()
 {
     LOG_DEBUG("running");
@@ -62,8 +70,8 @@ int32_t LeoRouter::runOnce()
 
     if (tleDB->nextPassage(getValidTime(RTCQualityDevice), winStart, winEnd)) {
         now = getValidTime(RTCQualityDevice);
-        LOG_DEBUG("LEORouter: next emission in %d seconds and has %d seconds", (int32_t) (winStart - now), (int32_t) (winEnd - winStart));
-        LOG_DEBUG("winStart: %d | winEnd: %d | now: %d", (int32_t)(winStart), (int32_t)(winEnd), (int32_t)(now));
+        LOG_DEBUG("LEORouter: next emission in %d seconds and lasts %d seconds", (int32_t) (winStart - now), (int32_t) (winEnd - winStart));
+        //LOG_DEBUG("winStart: %d | winEnd: %d | now: %d", (int32_t)(winStart), (int32_t)(winEnd), (int32_t)(now));
         if (winStart - now <= 1) {
             LOG_DEBUG("next run in one second");
             return 1000;
@@ -77,6 +85,9 @@ int32_t LeoRouter::runOnce()
     }
 }
 
+/**
+ * Unless a satellite is in range right now, makes a copy of the packet for later retransmission.
+ */
 ProcessMessage LeoRouter::handleReceived(const meshtastic_MeshPacket &mp) {
 
     time_t winStart;

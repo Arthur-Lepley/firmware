@@ -3,7 +3,7 @@
 #include "Router.h"
 
 /**
- * 
+ * Module in charge of capturing every outgoing packet to the mesh, then making a copy of them to retransmit them when a satellites flies in range of the node.
  */
 class LeoRouter : private concurrency::OSThread,
                          public MeshModule

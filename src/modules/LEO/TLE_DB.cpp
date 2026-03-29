@@ -16,16 +16,28 @@
 #include <pb_encode.h>
 
 
+/** All of our protobuf TLEs */
 meshtastic_TLEDatabase tleDatabase;
+/** The AIOP13 position of our node */
 P13Observer pObserver = P13Observer("placeholder", 0., 0., 0.);
+/** All of our satellite passage windows */
 std::vector<timeWindowTLE> windows;
+/** AIOP13 orbits for window calculations */
 std::map<uint32_t, P13Satellite> orbits;
+/** number of TLEs on disk */
 pb_size_t numTLEs;
 
 TLE_DB *tleDB;
+/** whether everything is ready for time windows to be calculated */
 bool activated = false;
 
 
+/**
+ * I have very little idea of what this does.
+ * It has to do with the fact that we store the TLEs on disk.
+ * Firmware wouldn't build without this.
+ * Ripped from NodeDB then updated for our data type.
+ */
 bool meshtastic_TLEDatabase_callback(pb_istream_t *istream, pb_ostream_t *ostream, const pb_field_iter_t *field)
 {
     if (ostream) {
@@ -46,6 +58,12 @@ bool meshtastic_TLEDatabase_callback(pb_istream_t *istream, pb_ostream_t *ostrea
     return true;
 }
 
+/**
+ * Gets the time window during which the specified satellite gets in range of our node.
+ * Range is calculated using relative elevation and antenna aperture only.
+ * The window returned has a minimum duration of around 10 seconds.
+ * The prediction is pretty brutish; elevation is calculated at various (but intelligently choosen) timestamps until we find a window.
+ */
 timeWindowTLE getWindow(uint32_t satCat) {
     auto oit = orbits.find(satCat);
     if (oit == orbits.end()) {
@@ -65,24 +83,31 @@ timeWindowTLE getWindow(uint32_t satCat) {
         }
     }
     if (aperture == -1) {
-        LOG_ERROR("TLE_DB: satellite %d referenced in orbits but not in database", satCat);
+        LOG_ERROR("TLE_DB: satellite %d referenced in AIOP13 orbits but not in database", satCat);
         return timeWindowTLE();
     }
     aperture = min(ANTENNA_APERTURE, aperture);
 
+    // How many revolutions of the satellite we have gotten through without entering in range.
     int revolutions = 0;
 
+    // A time used for our probing. Always inferior to newSecs.
     time_t prevSecs = getValidTime(RTCQualityDevice);
+    // this one is for debuging purposes
     time_t startT = prevSecs;
     if (prevSecs == 0) {
-        LOG_WARN("TLE_DB couldn't obtain a time window without a set RTC time");
+        LOG_ERROR("TLE_DB: RTC failure");
         return {0,0,0};
     }
+    // A time used for our probing. Always superior to prevSecs.
     time_t newSecs = prevSecs;
     tm *dateRef = gmtime(&prevSecs);
     dateRef->tm_year += 1900; dateRef->tm_mon += 1;
+    // AIOP13 time associated with prevSecs
     P13DateTime p13TimePrev = P13DateTime(dateRef->tm_year, dateRef->tm_mon, dateRef->tm_mday, dateRef->tm_hour, dateRef->tm_min, dateRef->tm_sec);
+    // AIOP13 time associated with newSecs
     P13DateTime p13TimeNew = P13DateTime(p13TimePrev);
+    // Used to measure if the satellite is moving away.
     P13DateTime p13TimeTick = P13DateTime(p13TimeNew);
     p13TimeTick.adds(10);
 
@@ -93,6 +118,7 @@ timeWindowTLE getWindow(uint32_t satCat) {
 
 
     bool inRange = false;
+    // Seconds in the future for next measurments.
     int step = 10;
 
     while (revolutions < 100) {
@@ -110,14 +136,18 @@ timeWindowTLE getWindow(uint32_t satCat) {
             sat.elaz(pObserver, tickElv, trash);
 
             if (newElv > (double)90 - aperture/2.f){
+                // We found a moment in time where the satellite is in range.
                 inRange = true;
                 //LOG_DEBUG("ENTERING RANGE");
             } else if (tickElv < newElv) {
+                // Satellite is moving away, skip around half a revolution.
                 step = 60*46;
                 revolutions++;
                 //LOG_DEBUG("revolution n°%d", revolutions);
+                // I hate this so much. I don't have the slightest idea as to why the hardware will crash and reboot without this stupid, bloating log.
                 LOG_DEBUG("the device will crash without this log.");
             } else {
+                // Depending on how close the satellite is, chooses an appropriate time jump.
                 if (newElv < -40) {
                     step = 20*60;
                 } else if (newElv < -20) {
@@ -132,6 +162,9 @@ timeWindowTLE getWindow(uint32_t satCat) {
             }
 
         } else {
+            // The satellite is 'now' in range.
+            // According to how we go about our measurments, newSecs is inside the window and prevSecs is before it.
+            // Since we can't substract time, we move both time stamps forward until they reach one of the extremes of the window.
             while (preElv < (double)90 - aperture/2.f) {
                 p13TimePrev.adds(1);
                 prevSecs += 1;
@@ -165,6 +198,9 @@ timeWindowTLE getWindow(uint32_t satCat) {
 
 }
 
+/**
+ * Creates and memorizes a time window for the specified satellite.
+ */
 bool newTimeWindow(uint32_t satCat) {
     timeWindowTLE newWin = getWindow(satCat);
     LOG_DEBUG("New got: START: %d | END: %d | CAT: %d", (int32_t)newWin.timeWinStart, (int32_t)newWin.timeWinEnd, newWin.satCat);
@@ -188,6 +224,9 @@ bool newTimeWindow(uint32_t satCat) {
     return true;
 }
 
+/**
+ * Checks for expired time windows, and creates the next passages for the satellites with expired windows.
+ */
 void updatePredictions() {
     auto first = windows.begin();
     while (first != windows.end() && first->timeWinEnd < getValidTime(RTCQualityDevice)){
@@ -202,6 +241,9 @@ void updatePredictions() {
     }
 }
 
+/**
+ * Removes everything associated with the specified satellite from our data.
+ */
 void removeSat(uint32_t satCat) {
     auto o = tleDatabase.tles.begin();
     while (o != tleDatabase.tles.end()) {
@@ -223,6 +265,9 @@ void removeSat(uint32_t satCat) {
     }
 }
 
+/**
+ * Adds a new satellite to our database.
+ */
 void addSat(meshtastic_TLE tle) {
     tleDatabase.tles.push_back(tle);
     const char* satName;
@@ -239,7 +284,9 @@ void addSat(meshtastic_TLE tle) {
     }
 }
 
-
+/**
+ * Saves our database to the disk to be fetched upon reboot.
+ */
 bool TLE_DB::saveTLEDatabaseToDisk()
 {
 
@@ -260,6 +307,9 @@ bool TLE_DB::saveTLEDatabaseToDisk()
     return nodeDB->saveProto(tleDatabaseFileName, tleDatabaseSize, &meshtastic_TLEDatabase_msg, &tleDatabase, false);
 }
 
+/**
+ * Wipes the database from the disk.
+ */
 bool TLE_DB::resetTLEDatabase() {
 
     if (!powerHAL_isPowerLevelSafe()) {
@@ -302,6 +352,9 @@ TLE_DB::TLE_DB() : ProtobufModule("TLE_database", meshtastic_PortNum_LEO_APP, &m
 
 };
 
+/**
+ * Updates the TLE database according to the instructions contained in the message.
+ */
 bool TLE_DB::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshtastic_LEOConfig *l)
 {
     if (l->which_action == meshtastic_LEOConfig_addreplace_tag) {
@@ -329,6 +382,9 @@ bool TLE_DB::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshtastic_
     return false; // Let others look at this message also if they want
 }
 
+/**
+ * Gives the earliest satellite passage time window that occurs after 'from'.
+ */
 bool TLE_DB::nextPassage(time_t from, time_t &start, time_t &end) {
     if (!activated) {
         LOG_ERROR("TLE_DB: nextPassage called before activation");
@@ -358,8 +414,12 @@ bool TLE_DB::nextPassage(time_t from, time_t &start, time_t &end) {
 }
 
 bool TLE_DB::isActivated() {return activated;}
-// only activate TLEDB after the device's position and RTC clock have been set
-// do not activate if isActivated() == true
+
+/**
+ * Only activate TLEDB after the device's position and RTC clock have been set.
+ * Do not activate if isActivated() == true.
+ * The TLEDB computes a time window for every satellite in the database upon activation.
+ */
 void TLE_DB::activate() {
     meshtastic_NodeInfoLite *self = nodeDB->getMeshNode(nodeDB->getNodeNum());
     if (!self->has_position) {
@@ -374,7 +434,7 @@ void TLE_DB::activate() {
         return;
     };
     if (isActivated()) {
-        LOG_ERROR("TLE_DB activate() has been called multiple times");
+        LOG_ERROR("TLE_DB.activate() has been called multiple times");
         return;
     }
     LOG_DEBUG("activating TLE_DB");

@@ -10,13 +10,18 @@
 
 static constexpr const char *tleDatabaseFileName = "/prefs/tles.proto";
 
+/**
+ * precalculated time windows during which the satellite associated to the catalog number flies in range of our node.
+ */
 typedef struct _timeWindowTLE {
     time_t timeWinStart;
     time_t timeWinEnd;
     uint32_t satCat;
 } timeWindowTLE;
 
-/*Module to manage the TLE database, as well as satellite passage predicitons*/
+/**
+ * Module to manage the TLE database, as well as satellite passage predicitons
+ */
 class TLE_DB : public ProtobufModule<meshtastic_LEOConfig>
 {
   public:
